@@ -44,7 +44,7 @@ pipeline {
                     env.GIT_SHORT_SHA = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
                     env.TRACE_TAG = "${env.BUILD_TS}-${env.GIT_SHORT_SHA}"
                     env.SAFE_BRANCH_NAME = env.BRANCH_NAME.replaceAll(/[^A-Za-z0-9_.-]/, '-')
-                    env.LOCAL_IMAGE = "alex-api-ci:${env.SAFE_BRANCH_NAME}-${env.BUILD_NUMBER}-${env.GIT_SHORT_SHA}"
+                    env.LOCAL_IMAGE = env.IS_MAIN_BRANCH == 'true' ? "alex-api-ci:${env.SAFE_BRANCH_NAME}-${env.BUILD_NUMBER}-${env.GIT_SHORT_SHA}" : ''
                     env.IMAGE_FULL = env.IS_MAIN_BRANCH == 'true' ? "${env.REGISTRY_HOST}/${env.REGISTRY_REPO}:${env.TRACE_TAG}" : ''
 
                     echo """
@@ -54,7 +54,7 @@ pipeline {
                     Pull Request: ${env.CHANGE_ID ?: '否'}
                     构建号: ${env.BUILD_NUMBER}
                     构建时间戳: ${env.BUILD_TS}
-                    本地验证镜像: ${env.LOCAL_IMAGE}
+                    本地验证镜像: ${env.LOCAL_IMAGE ?: '仅 main 分支构建'}
                     发布镜像: ${env.IMAGE_FULL ?: '仅 main 分支推送'}
                     镜像仓库: ${env.REGISTRY_HOST}/${env.REGISTRY_REPO}
                     仓库凭据ID: ${env.REGISTRY_CREDENTIALS_ID}
@@ -79,14 +79,15 @@ pipeline {
         }
 
         stage('Build Runtime Image') {
+            when {
+                expression { env.IS_MAIN_BRANCH == 'true' }
+            }
             steps {
                 sh '''
                     set -e
                     ls target/*.jar
                     docker build -t "$LOCAL_IMAGE" .
-                    if [ "$IS_MAIN_BRANCH" = "true" ]; then
-                        docker tag "$LOCAL_IMAGE" "$IMAGE_FULL"
-                    fi
+                    docker tag "$LOCAL_IMAGE" "$IMAGE_FULL"
                 '''
             }
         }
@@ -123,7 +124,7 @@ pipeline {
                 if (env.IS_MAIN_BRANCH == 'true') {
                     echo "CI 成功: main -> 镜像 ${env.IMAGE_FULL}"
                 } else {
-                    echo "CI 成功: ${env.BRANCH_NAME} -> 已完成分支校验与镜像封装验证，未推送仓库"
+                    echo "CI 成功: ${env.BRANCH_NAME} -> 已完成分支 Maven 校验，未构建发布镜像"
                 }
             }
         }
