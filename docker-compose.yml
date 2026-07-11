@@ -1,0 +1,21 @@
+version: "3.9"
+
+services:
+  app-service:
+    image: ${APP_IMAGE}
+    container_name: ${CONTAINER_NAME:-alex-api}
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-test}
+      JAVA_TOOL_OPTIONS: ${APP_JAVA_TOOL_OPTIONS:--Xms64m -Xmx160m}
+    ports:
+      - "${APP_PORT:-9000}:${CONTAINER_PORT:-8888}"
+    volumes:
+      - "${DEPLOY_LOG_DIR:-./logs}:/app/logs"
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    name: ${APP_NETWORK:-network}
+    external: true

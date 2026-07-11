@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- status：内部日志级别，monitorInterval：每30秒检测一次配置文件是否有变化，自动重载 -->
+<Configuration status="WARN" monitorInterval="30">
+    <Properties>
+        <!-- 日志输出目录：优先使用环境变量 LOG_HOME，如果没有则使用默认值 logs -->
+        <Property name="LOG_HOME">${env:LOG_HOME:-logs}</Property>
+
+        <!-- 通用日志输出格式 -->
+        <Property name="LOG_PATTERN">%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</Property>
+
+        <!-- 控制台日志格式（包含颜色） -->
+        <Property name="CONSOLE_PATTERN">%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %highlight{%-5level} %logger{36} - %msg%n</Property>
+    </Properties>
+
+    <Appenders>
+        <!-- 控制台输出 -->
+        <Console name="Console" target="SYSTEM_OUT">
+            <PatternLayout pattern="${CONSOLE_PATTERN}" charset="UTF-8" alwaysWriteExceptions="false" disableAnsi="false"/>
+        </Console>
+
+        <!-- Info 日志文件，支持时间和大小滚动 -->
+        <RollingFile name="InfoFile"
+                     fileName="${LOG_HOME}/app.log"
+                     filePattern="${LOG_HOME}/%d{yyyy-MM-dd}/app-%i.log.gz">
+            <PatternLayout pattern="${LOG_PATTERN}"/>
+
+            <Policies>
+                <!-- 超过指定大小就切割 -->
+                <SizeBasedTriggeringPolicy size="10 MB"/>
+                <!-- 每天切割一次 -->
+                <TimeBasedTriggeringPolicy/>
+            </Policies>
+
+            <!-- 最多保留30个历史文件 -->
+            <DefaultRolloverStrategy max="30"/>
+
+            <!-- 只接收 info 及以上，但不包含 error（error 会被 error_file 接收） -->
+            <Filters>
+                <ThresholdFilter level="info" onMatch="ACCEPT" onMismatch="DENY"/>
+            </Filters>
+        </RollingFile>
+
+        <!-- Error 日志文件，按时间/大小滚动 -->
+        <RollingFile name="ErrorFile"
+                     fileName="${LOG_HOME}/error.log"
+                     filePattern="${LOG_HOME}/%d{yyyy-MM-dd}/error-%i.log.gz">
+            <PatternLayout pattern="${LOG_PATTERN}"/>
+
+            <Policies>
+                <SizeBasedTriggeringPolicy size="10 MB"/>
+                <TimeBasedTriggeringPolicy/>
+            </Policies>
+
+            <DefaultRolloverStrategy max="30"/>
+
+            <!-- 只记录 error 级别日志 -->
+            <Filters>
+                <ThresholdFilter level="error" onMatch="ACCEPT" onMismatch="DENY"/>
+            </Filters>
+        </RollingFile>
+    </Appenders>
+
+    <Loggers>
+        <!-- 默认全局日志级别，设为 info（低于 info 的日志不会打印） -->
+        <Root level="info">
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="InfoFile"/>
+            <AppenderRef ref="ErrorFile"/>
+        </Root>
+    </Loggers>
+</Configuration>
