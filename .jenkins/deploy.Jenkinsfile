@@ -177,8 +177,18 @@ pipeline {
                         sh """
                             ssh ${env.DEPLOY_USER}@${env.DEPLOY_IP} "
                                 set -e
-                                test -f ~/.docker/config.json
-                                grep -q '${env.REGISTRY_HOST}' ~/.docker/config.json
+                                DOCKER_CONFIG_FILE=~/.docker/config.json
+                                if [ ! -f \\"\$DOCKER_CONFIG_FILE\\" ]; then
+                                    echo '远端未发现 Docker 登录配置: ~/.docker/config.json'
+                                    echo '请先在部署机执行: docker login ${env.REGISTRY_HOST}'
+                                    exit 1
+                                fi
+                                if ! grep -q '${env.REGISTRY_HOST}' \\"\$DOCKER_CONFIG_FILE\\"; then
+                                    echo '远端 Docker 已有配置，但未包含当前镜像仓库登录信息'
+                                    echo '请先在部署机执行: docker login ${env.REGISTRY_HOST}'
+                                    exit 1
+                                fi
+                                echo '远端镜像仓库认证检查通过'
                             "
                         """
                     }
@@ -203,7 +213,10 @@ pipeline {
                             ssh ${env.DEPLOY_USER}@${env.DEPLOY_IP} "
                                 set -e
                                 cd ${env.DEPLOY_HOME}
-                                test -f .env.secret
+                                if [ ! -f .env.secret ]; then
+                                    echo '缺少 .env.secret，请先在部署机准备敏感配置文件'
+                                    exit 1
+                                fi
                                 docker compose pull
                                 docker compose up -d
                                 docker compose ps
