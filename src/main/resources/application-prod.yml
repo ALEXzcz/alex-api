@@ -3,12 +3,12 @@ spring:
     type: com.zaxxer.hikari.HikariDataSource
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://mysql:3306/test_alex?characterEncoding=UTF-8&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
-    username: alex
-    password: ALEXzcz123456
+    username: ${DB_USERNAME:alex}
+    password: ${DB_PASSWORD:}
 
   data:
     redis:
       host: redis
       port: 6379
-      password: ALEXzcz123456
+      password: ${REDIS_PASSWORD:}
       database: 0
