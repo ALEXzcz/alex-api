@@ -16,21 +16,6 @@ def parseEnvFile(String content) {
     return result
 }
 
-def serverConfig = [
-    "test": [
-        ip: "47.119.185.39",
-        user: "alex",
-        cred: "aliyun-server-ssh-key",
-        appHome: "/home/alex/alex-api"
-    ],
-    "prod": [
-        ip: "47.119.185.39",
-        user: "alex",
-        cred: "aliyun-server-ssh-key",
-        appHome: "/home/alex/alex-api"
-    ]
-]
-
 pipeline {
     agent none
 
@@ -64,14 +49,12 @@ pipeline {
                     if (!params.IMAGE_TAG?.trim()) {
                         error 'IMAGE_TAG 不能为空'
                     }
-                    def cfg = serverConfig[params.DEPLOY_ENV]
-                    if (cfg == null) {
-                        error "未知环境: ${params.DEPLOY_ENV}"
-                    }
+
                     def deployEnvFile = "deploy/${params.DEPLOY_ENV}.env"
                     if (!fileExists(deployEnvFile)) {
                         error "环境配置文件不存在: ${deployEnvFile}"
                     }
+
                     def deployEnvConfig = parseEnvFile(readFile(file: deployEnvFile))
                     env.SOURCE_IMAGE_TAG = params.IMAGE_TAG.trim()
                     env.RELEASE_TAG = params.RELEASE_TAG?.trim() ?: ''
@@ -79,10 +62,10 @@ pipeline {
                     env.RELEASE_IMAGE_FULL = env.RELEASE_TAG ? "${env.REGISTRY_HOST}/${env.REGISTRY_REPO}:${env.RELEASE_TAG}" : ''
                     env.DEPLOY_IMAGE_FULL = env.RELEASE_TAG ? env.RELEASE_IMAGE_FULL : env.SOURCE_IMAGE_FULL
                     env.DEPLOY_ENV_FILE = deployEnvFile
-                    env.DEPLOY_IP = cfg.ip
-                    env.DEPLOY_USER = cfg.user
-                    env.DEPLOY_CRED = cfg.cred
-                    env.DEPLOY_HOME = cfg.appHome
+                    env.DEPLOY_IP = deployEnvConfig['DEPLOY_HOST'] ?: ''
+                    env.DEPLOY_USER = deployEnvConfig['DEPLOY_USER'] ?: ''
+                    env.DEPLOY_CRED = deployEnvConfig['DEPLOY_CRED'] ?: ''
+                    env.DEPLOY_HOME = deployEnvConfig['DEPLOY_HOME'] ?: ''
                     env.DEPLOY_PROFILE = deployEnvConfig['SPRING_PROFILES_ACTIVE'] ?: ''
                     env.DEPLOY_APP_PORT = deployEnvConfig['APP_PORT'] ?: ''
                     env.DEPLOY_CONTAINER_PORT = deployEnvConfig['CONTAINER_PORT'] ?: ''
@@ -90,10 +73,26 @@ pipeline {
                     env.DEPLOY_NETWORK = deployEnvConfig['APP_NETWORK'] ?: ''
                     env.DEPLOY_CONTAINER_NAME = deployEnvConfig['CONTAINER_NAME'] ?: ''
                     env.DEPLOY_APP_JAVA_TOOL_OPTIONS = deployEnvConfig['APP_JAVA_TOOL_OPTIONS'] ?: ''
+
+                    if (!env.DEPLOY_IP?.trim()) {
+                        error "环境配置缺少 DEPLOY_HOST: ${deployEnvFile}"
+                    }
+                    if (!env.DEPLOY_USER?.trim()) {
+                        error "环境配置缺少 DEPLOY_USER: ${deployEnvFile}"
+                    }
+                    if (!env.DEPLOY_CRED?.trim()) {
+                        error "环境配置缺少 DEPLOY_CRED: ${deployEnvFile}"
+                    }
+                    if (!env.DEPLOY_HOME?.trim()) {
+                        error "环境配置缺少 DEPLOY_HOME: ${deployEnvFile}"
+                    }
                     if (!env.DEPLOY_APP_PORT?.trim()) {
                         error "环境配置缺少 APP_PORT: ${deployEnvFile}"
                     }
-                    env.DEPLOY_HEALTH_URL = "http://${cfg.ip}:${env.DEPLOY_APP_PORT}/actuator/health"
+
+                    env.DEPLOY_HEALTH_URL = "http://${env.DEPLOY_IP}:${env.DEPLOY_APP_PORT}/actuator/health"
+                    currentBuild.displayName = "#${env.BUILD_NUMBER} ${params.DEPLOY_ENV} ${env.RELEASE_TAG ?: env.SOURCE_IMAGE_TAG}"
+                    currentBuild.description = "env=${params.DEPLOY_ENV}, image=${env.DEPLOY_IMAGE_FULL}, host=${env.DEPLOY_IP}, home=${env.DEPLOY_HOME}"
                 }
             }
         }
@@ -102,25 +101,45 @@ pipeline {
             agent any
             steps {
                 script {
+                    writeFile file: 'deploy-record.properties', text: """
+                        DEPLOY_ENV=${params.DEPLOY_ENV}
+                        SOURCE_IMAGE_TAG=${env.SOURCE_IMAGE_TAG}
+                        RELEASE_TAG=${env.RELEASE_TAG}
+                        DEPLOY_IMAGE_FULL=${env.DEPLOY_IMAGE_FULL}
+                        DEPLOY_HOST=${env.DEPLOY_IP}
+                        DEPLOY_USER=${env.DEPLOY_USER}
+                        DEPLOY_HOME=${env.DEPLOY_HOME}
+                        SPRING_PROFILES_ACTIVE=${env.DEPLOY_PROFILE}
+                        APP_PORT=${env.DEPLOY_APP_PORT}
+                        CONTAINER_PORT=${env.DEPLOY_CONTAINER_PORT}
+                        CONTAINER_NAME=${env.DEPLOY_CONTAINER_NAME}
+                        APP_NETWORK=${env.DEPLOY_NETWORK}
+                        APP_JAVA_TOOL_OPTIONS=${env.DEPLOY_APP_JAVA_TOOL_OPTIONS}
+                        BUILD_NUMBER=${env.BUILD_NUMBER}
+                        BUILD_URL=${env.BUILD_URL}
+                        JOB_NAME=${env.JOB_NAME}
+                    """.trim() + "\n"
+
                     echo """
-                    ========== GitHub Flow CD 发布信息 ==========
-                    部署环境: ${params.DEPLOY_ENV}
-                    CI 镜像标签: ${env.SOURCE_IMAGE_TAG}
-                    Release 标签: ${env.RELEASE_TAG ?: '未指定'}
-                    部署镜像: ${env.DEPLOY_IMAGE_FULL}
-                    服务器 IP: ${env.DEPLOY_IP}
-                    SSH 用户: ${env.DEPLOY_USER}
-                    部署目录: ${env.DEPLOY_HOME}
-                    运行 Profile: ${env.DEPLOY_PROFILE}
-                    容器名称: ${env.DEPLOY_CONTAINER_NAME}
-                    服务端口: ${env.DEPLOY_APP_PORT}
-                    容器端口: ${env.DEPLOY_CONTAINER_PORT}
-                    日志目录: ${env.DEPLOY_LOG_DIR}
-                    容器网络: ${env.DEPLOY_NETWORK}
-                    JVM 参数: ${env.DEPLOY_APP_JAVA_TOOL_OPTIONS}
-                    发布模式: ${env.RELEASE_TAG ? '先打 Release Tag，再部署' : '普通部署'}
-                    制品来源: main 分支 CI
-                    ==================================
+                        ========== GitHub Flow CD 发布信息 ==========
+                        部署环境: ${params.DEPLOY_ENV}
+                        CI 镜像标签: ${env.SOURCE_IMAGE_TAG}
+                        Release 标签: ${env.RELEASE_TAG ?: '未指定'}
+                        部署镜像: ${env.DEPLOY_IMAGE_FULL}
+                        服务器 IP: ${env.DEPLOY_IP}
+                        SSH 用户: ${env.DEPLOY_USER}
+                        部署目录: ${env.DEPLOY_HOME}
+                        运行 Profile: ${env.DEPLOY_PROFILE}
+                        容器名称: ${env.DEPLOY_CONTAINER_NAME}
+                        服务端口: ${env.DEPLOY_APP_PORT}
+                        容器端口: ${env.DEPLOY_CONTAINER_PORT}
+                        日志目录: ${env.DEPLOY_LOG_DIR}
+                        容器网络: ${env.DEPLOY_NETWORK}
+                        JVM 参数: ${env.DEPLOY_APP_JAVA_TOOL_OPTIONS}
+                        发布模式: ${env.RELEASE_TAG ? '先打 Release Tag，再部署' : '普通部署'}
+                        制品来源: main 分支 CI
+                        镜像拉取认证: 由部署机本地 docker login 提供
+                        ==================================
                     """
                 }
             }
@@ -132,21 +151,36 @@ pipeline {
             }
             agent any
             steps {
+                withCredentials([usernamePassword(credentialsId: env.REGISTRY_CREDENTIALS_ID, usernameVariable: 'REG_USER', passwordVariable: 'REG_PASS')]) {
+                    sh '''
+                        set -e
+                        cleanup() {
+                            docker rmi "$RELEASE_IMAGE_FULL" >/dev/null 2>&1 || true
+                            docker rmi "$SOURCE_IMAGE_FULL" >/dev/null 2>&1 || true
+                        }
+                        trap cleanup EXIT
+                        echo "$REG_PASS" | docker login "$REGISTRY_HOST" -u "$REG_USER" --password-stdin
+                        docker pull "$SOURCE_IMAGE_FULL"
+                        docker tag "$SOURCE_IMAGE_FULL" "$RELEASE_IMAGE_FULL"
+                        docker push "$RELEASE_IMAGE_FULL"
+                        docker logout "$REGISTRY_HOST" || true
+                    '''
+                }
+            }
+        }
+
+        stage('Verify Remote Registry Auth') {
+            agent any
+            steps {
                 script {
-                    withCredentials([usernamePassword(credentialsId: env.REGISTRY_CREDENTIALS_ID, usernameVariable: 'REG_USER', passwordVariable: 'REG_PASS')]) {
-                        sh '''
-                            set -e
-                            cleanup() {
-                                docker rmi "$RELEASE_IMAGE_FULL" >/dev/null 2>&1 || true
-                                docker rmi "$SOURCE_IMAGE_FULL" >/dev/null 2>&1 || true
-                            }
-                            trap cleanup EXIT
-                            echo "$REG_PASS" | docker login "$REGISTRY_HOST" -u "$REG_USER" --password-stdin
-                            docker pull "$SOURCE_IMAGE_FULL"
-                            docker tag "$SOURCE_IMAGE_FULL" "$RELEASE_IMAGE_FULL"
-                            docker push "$RELEASE_IMAGE_FULL"
-                            docker logout "$REGISTRY_HOST" || true
-                        '''
+                    sshagent([env.DEPLOY_CRED]) {
+                        sh """
+                            ssh ${env.DEPLOY_USER}@${env.DEPLOY_IP} "
+                                set -e
+                                test -f ~/.docker/config.json
+                                grep -q '${env.REGISTRY_HOST}' ~/.docker/config.json
+                            "
+                        """
                     }
                 }
             }
@@ -155,29 +189,26 @@ pipeline {
         stage('Deploy') {
             agent any
             steps {
-                checkout scm   // 拉取 docker-compose.yml 和环境配置文件
+                checkout scm
                 script {
-                    withCredentials([usernamePassword(credentialsId: env.REGISTRY_CREDENTIALS_ID, usernameVariable: 'REG_USER', passwordVariable: 'REG_PASS')]) {
-                        sshagent([env.DEPLOY_CRED]) {
-                            sh """
+                    sshagent([env.DEPLOY_CRED]) {
+                        sh """
+                            set -e
+                            test -f "${WORKSPACE}/docker-compose.yml"
+                            test -f "${WORKSPACE}/${env.DEPLOY_ENV_FILE}"
+                            ssh ${env.DEPLOY_USER}@${env.DEPLOY_IP} "mkdir -p ${env.DEPLOY_HOME} ${env.DEPLOY_LOG_DIR}"
+                            scp "${WORKSPACE}/docker-compose.yml" ${env.DEPLOY_USER}@${env.DEPLOY_IP}:${env.DEPLOY_HOME}/docker-compose.yml
+                            scp "${WORKSPACE}/${env.DEPLOY_ENV_FILE}" ${env.DEPLOY_USER}@${env.DEPLOY_IP}:${env.DEPLOY_HOME}/.env
+                            ssh ${env.DEPLOY_USER}@${env.DEPLOY_IP} "sed -i 's|^APP_IMAGE=.*|APP_IMAGE=${env.DEPLOY_IMAGE_FULL}|' ${env.DEPLOY_HOME}/.env"
+                            ssh ${env.DEPLOY_USER}@${env.DEPLOY_IP} "
                                 set -e
-                                test -f "${WORKSPACE}/docker-compose.yml"
-                                test -f "${WORKSPACE}/${env.DEPLOY_ENV_FILE}"
-                                ssh ${env.DEPLOY_USER}@${env.DEPLOY_IP} "mkdir -p ${env.DEPLOY_HOME} ${env.DEPLOY_LOG_DIR}"
-                                scp "${WORKSPACE}/docker-compose.yml" ${env.DEPLOY_USER}@${env.DEPLOY_IP}:${env.DEPLOY_HOME}/docker-compose.yml
-                                scp "${WORKSPACE}/${env.DEPLOY_ENV_FILE}" ${env.DEPLOY_USER}@${env.DEPLOY_IP}:${env.DEPLOY_HOME}/.env
-                                ssh ${env.DEPLOY_USER}@${env.DEPLOY_IP} "sed -i 's|^APP_IMAGE=.*|APP_IMAGE=${env.DEPLOY_IMAGE_FULL}|' ${env.DEPLOY_HOME}/.env"
-                                printf '%s' "\$REG_PASS" | ssh ${env.DEPLOY_USER}@${env.DEPLOY_IP} "docker login ${env.REGISTRY_HOST} -u \"\$REG_USER\" --password-stdin"
-                                ssh ${env.DEPLOY_USER}@${env.DEPLOY_IP} "
-                                    set -e
-                                    cd ${env.DEPLOY_HOME}
-                                    docker compose pull
-                                    docker compose up -d
-                                    docker compose ps
-                                    docker logout ${env.REGISTRY_HOST} >/dev/null 2>&1 || true
-                                "
-                            """
-                        }
+                                cd ${env.DEPLOY_HOME}
+                                test -f .env.secret
+                                docker compose pull
+                                docker compose up -d
+                                docker compose ps
+                            "
+                        """
                     }
                 }
             }
@@ -231,6 +262,9 @@ pipeline {
     }
 
     post {
+        always {
+            archiveArtifacts artifacts: 'deploy-record.properties', onlyIfSuccessful: false, allowEmptyArchive: true
+        }
         success {
             echo "CD 成功: ${params.DEPLOY_ENV} -> ${env.DEPLOY_IP}, 镜像: ${env.DEPLOY_IMAGE_FULL}"
         }
