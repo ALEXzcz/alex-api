@@ -1,7 +1,9 @@
 target/
 logs/
-#/.env.secret
-#*.secret.env
+.env
+.env.*
+!deploy/test.env
+!deploy/prod.env
 !.mvn/wrapper/maven-wrapper.jar
 
 ### STS ###
