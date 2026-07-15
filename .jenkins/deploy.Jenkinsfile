@@ -141,6 +141,8 @@ pipeline {
                         镜像拉取认证: 由部署机本地 docker login 提供
                         ==================================
                     """
+
+                    archiveArtifacts artifacts: 'deploy-record.properties', onlyIfSuccessful: false, allowEmptyArchive: true
                 }
             }
         }
@@ -175,21 +177,21 @@ pipeline {
                 script {
                     sshagent([env.DEPLOY_CRED]) {
                         sh """
-                            ssh ${env.DEPLOY_USER}@${env.DEPLOY_IP} "
+                            ssh ${env.DEPLOY_USER}@${env.DEPLOY_IP} '
                                 set -e
                                 DOCKER_CONFIG_FILE=~/.docker/config.json
-                                if [ ! -f \\"\$DOCKER_CONFIG_FILE\\" ]; then
-                                    echo '远端未发现 Docker 登录配置: ~/.docker/config.json'
-                                    echo '请先在部署机执行: docker login ${env.REGISTRY_HOST}'
+                                if [ ! -f "$DOCKER_CONFIG_FILE" ]; then
+                                    echo "远端未发现 Docker 登录配置: ~/.docker/config.json"
+                                    echo "请先在部署机执行: docker login ${env.REGISTRY_HOST}"
                                     exit 1
                                 fi
-                                if ! grep -q '${env.REGISTRY_HOST}' \\"\$DOCKER_CONFIG_FILE\\"; then
-                                    echo '远端 Docker 已有配置，但未包含当前镜像仓库登录信息'
-                                    echo '请先在部署机执行: docker login ${env.REGISTRY_HOST}'
+                                if ! grep -q "${env.REGISTRY_HOST}" "$DOCKER_CONFIG_FILE"; then
+                                    echo "远端 Docker 已有配置，但未包含当前镜像仓库登录信息"
+                                    echo "请先在部署机执行: docker login ${env.REGISTRY_HOST}"
                                     exit 1
                                 fi
-                                echo '远端镜像仓库认证检查通过'
-                            "
+                                echo "远端镜像仓库认证检查通过"
+                            '
                         """
                     }
                 }
@@ -275,9 +277,6 @@ pipeline {
     }
 
     post {
-        always {
-            archiveArtifacts artifacts: 'deploy-record.properties', onlyIfSuccessful: false, allowEmptyArchive: true
-        }
         success {
             echo "CD 成功: ${params.DEPLOY_ENV} -> ${env.DEPLOY_IP}, 镜像: ${env.DEPLOY_IMAGE_FULL}"
         }
